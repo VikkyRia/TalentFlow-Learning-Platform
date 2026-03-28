@@ -3,6 +3,9 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 require("dotenv").config();
+require("./config/db");
+const migrate = require("./db/migrate");
+migrate();
 
 const app = express();
 
