@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
-const notificationController = require("../controllers/notification.controller");
-const { protect } = require("../middleware/auth"); // Using your partner's middleware
+const notificationController = require("./notification.controller");
+const { protect } = require("../../middlewares/auth.middleware"); // Using your partner's middleware
 
 /**
  * @route   GET /api/notifications

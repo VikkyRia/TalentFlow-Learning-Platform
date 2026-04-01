@@ -1,22 +1,23 @@
-const { createClient } = require('redis');
+const redis = require('redis');
 require('dotenv').config();
 
-const client = createClient({
-  url: process.env.REDIS_URL
+// Use the URL from Upstash (starts with rediss://)
+const redisClient = redis.createClient({
+    url: process.env.REDIS_URL,
+    socket: {
+        reconnectStrategy: (retries) => {
+            if (retries > 10) return new Error('Redis max retries reached');
+            return Math.min(retries * 50, 500);
+        }
+    }
 });
 
-client.on('error', (err) => console.log('Redis Client Error', err));
+redisClient.on('error', (err) => console.error('Redis Client Error', err));
+redisClient.on('connect', () => console.log('Connected to Upstash Redis! 🚀'));
 
-// Using an async function to connect
-const connectRedis = async () => {
-  try {
-    await client.connect();
-    console.log('Connected to Upstash Redis successfully!');
-  } catch (err) {
-    console.error('Redis connection failed:', err);
-  }
-};
+// Ensure the connection is established
+(async () => {
+    await redisClient.connect();
+})();
 
-connectRedis();
-
-module.exports = client;
+module.exports = redisClient;

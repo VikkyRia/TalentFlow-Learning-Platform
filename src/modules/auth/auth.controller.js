@@ -1,204 +1,180 @@
-const User = require("../models/user.model");
-const jwt = require("jsonwebtoken");
-const pool = require('../config/db');
-const redisClient = require("../config/redis");
-const bcrypt = require("bcryptjs");
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const db = require("../../config/db");
+const redisClient = require('../../config/redis');
+const sendEmail = require('../../utils/mailer'); // Import the mailer
+const { success, error } = require("../../utils/response");
 
-const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, {
-    expiresIn: "7d",
-  });
+// Helper to generate JWT
+const generateToken = (user) => {
+    return jwt.sign(
+        { id: user.id, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+    );
 };
 
+// ── REGISTER ────────────────────────────────────────────────────────
 exports.register = async (req, res) => {
-  const { email, password, username } = req.body;
-
-  try {
-    // 1. Check if user exists
-    const userExist = await User.findOne({ where: { email } });
-
-    if (userExist) {
-      return res.status(400).json({
-        success: false,
-        message: "User already exists",
-        data: null,
-      });
-    }
-
-    // 2. Hash password & Create User
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({
-      email,
-      password: hashedPassword,
-      username,
-    });
-
-    // 3. Redis Caching: Store a 6-digit OTP for 10 minutes
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    await redisClient.setEx(`otp:${email}`, 600, otp);
-    console.log(`OTP for ${email} stored in Redis.`);
-
-    // 4. Standardized Response (Rule #1)
-    return res.status(201).json({
-      success: true,
-      message: "Registration successful. OTP sent to email.",
-      data: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-      data: null,
-    });
-  }
-};
-
-
-exports.login = async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, name } = req.body;
 
     try {
-        // 1. Query the PostgreSQL database for the user
-        // Note: 'rows' will be empty if the user doesn't exist
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        const user = result.rows[0];
-
-        // 2. Validate user and password
-        if (!user || !(await bcrypt.compare(password, user.password))) {
-            return res.status(401).json({
-                success: false,
-                message: "Invalid email or password",
-                data: null
-            });
+        const existingUser = await db.query("SELECT * FROM users WHERE email = $1", [email]);
+        if (existingUser.rows.length > 0) {
+            return error(res, "User already exists", 400);
         }
 
-        // 3. Create the JWT Token
-        // We include the role so Toria/Temyl can check for 'admin' or 'instructor'
-        const token = jwt.sign(
-            { id: user.id, role: user.role }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: '7d' }
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const result = await db.query(
+            "INSERT INTO users (email, password, name) VALUES ($1, $2, $3) RETURNING id, name, email, role, is_verified",
+            [email, hashedPassword, name]
+        );
+        const user = result.rows[0];
+
+        // Redis: Store a 6-digit OTP for 10 minutes
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        await redisClient.setEx(`otp:${email}`, 600, otp);
+        
+        // Send Email
+        const emailContent = `<h1>Welcome to TalentFlow</h1><p>Your verification code is: <b>${otp}</b>. It expires in 10 minutes.</p>`;
+        await sendEmail(email, "Verify Your Account - TalentFlow", `Your OTP is ${otp}`, emailContent);
+
+        console.log(`OTP for ${email} is: ${otp}`); 
+
+        return success(res, "Registration successful. OTP sent to email.", {
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email
+            }
+        }, 201);
+    } catch (err) {
+        return error(res, err.message, 500);
+    }
+};
+
+// ── VERIFY OTP ──────────────────────────────────────────────────────
+exports.verifyOTP = async (req, res) => {
+    const { email, otp } = req.body;
+
+    try {
+        // 1. Get OTP from Redis
+        const storedOtp = await redisClient.get(`otp:${email}`);
+
+        if (!storedOtp) {
+            return error(res, "OTP expired or not found. Please register again.", 400);
+        }
+
+        // 2. Check if OTP matches
+        if (storedOtp !== otp) {
+            return error(res, "Invalid OTP code", 400);
+        }
+
+        // 3. Update User in Postgres
+        const result = await db.query(
+            "UPDATE users SET is_verified = true WHERE email = $1 RETURNING id, name, email, is_verified",
+            [email]
         );
 
-        // 4. Standardized Response (Team Rule #1)
-        return res.status(200).json({
-            success: true,
-            message: "Login successful",
-            data: {
-                token: token,
-                user: {
-                    id: user.id,
-                    username: user.username,
-                    email: user.email,
-                    role: user.role
-                }
+        if (result.rowCount === 0) {
+            return error(res, "User not found", 404);
+        }
+
+        // 4. Delete OTP from Redis (so it can't be used again)
+        await redisClient.del(`otp:${email}`);
+
+        return success(res, "Account verified successfully! You can now login.", {
+            user: result.rows[0]
+        });
+    } catch (err) {
+        return error(res, err.message, 500);
+    }
+};
+
+// ── LOGIN ───────────────────────────────────────────────────────────
+exports.login = async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const result = await db.query("SELECT * FROM users WHERE email = $1", [email]);
+        const user = result.rows[0];
+
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            return error(res, "Invalid email or password", 401);
+        }
+
+        const token = generateToken(user);
+        return success(res, "Login successful", {
+            token,
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                is_verified: user.is_verified
             }
         });
-
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: error.message,
-            data: null
-        });
+    } catch (err) {
+        return error(res, err.message, 500);
     }
 };
 
+// ── LOGOUT ──────────────────────────────────────────────────────────
 exports.logout = async (req, res) => {
     try {
-        // Since we are using Bearer tokens, the client just needs to discard it.
-        // We return a success message as per Team Rule #1.
-        return res.status(200).json({
-            success: true,
-            message: "Logged out successfully",
-            data: null
-        });
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: error.message,
-            data: null
-        });
+        // This clears the cookie named 'token' on the user's browser
+        res.clearCookie('token'); 
+        
+        return success(res, "Logged out successfully");
+    } catch (err) {
+        return error(res, err.message, 500);
     }
 };
 
+// ── FORGOT PASSWORD ─────────────────────────────────────────────────
 exports.forgotPassword = async (req, res) => {
     const { email } = req.body;
     try {
-        // 1. Check if user exists in PG
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
         if (result.rows.length === 0) {
-            return res.status(404).json({ success: false, message: "User not found" });
+            return error(res, "User not found", 404);
         }
 
-        // 2. Generate a random reset token
-        const resetToken = crypto.randomBytes(20).toString('hex');
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        await redisClient.setEx(`otp_reset:${email}`, 900, otp);
 
-        // 3. Store in Redis for 15 minutes
-        await redisClient.setEx(`reset:${resetToken}`, 900, email);
+        // Send Reset Email
+        await sendEmail(
+            email, 
+            "Password Reset - TalentFlow", 
+            `Your password reset OTP is ${otp}`, 
+            `<p>You requested a password reset. Use this code: <b>${otp}</b></p>`
+        );
 
-        // 4. Send Email (using your working SMTP setup)
-        // sendPasswordResetEmail(email, resetToken); 
-
-        return res.status(200).json({
-            success: true,
-            message: "Password reset link sent to email",
-            data: { resetToken } // In production, don't return this; only send via email
-        });
-    } catch (error) {
-        return res.status(500).json({ success: false, message: error.message });
+        return success(res, "Password reset OTP sent to email"); 
+    } catch (err) {
+        return error(res, err.message, 500);
     }
 };
 
+// ── RESET PASSWORD ──────────────────────────────────────────────────
 exports.resetPassword = async (req, res) => {
     const { email, otp, newPassword } = req.body;
-
     try {
-        // 1. Fetch the OTP from Redis
         const storedOtp = await redisClient.get(`otp_reset:${email}`);
-
-        // 2. Verify if OTP exists and matches
         if (!storedOtp || storedOtp !== otp) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid or expired OTP",
-                data: null
-            });
+            return error(res, "Invalid or expired OTP", 400);
         }
 
-        // 3. Hash the new password
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-        // 4. Update the password in PostgreSQL (Neon)
-        const updateQuery = 'UPDATE users SET password = $1 WHERE email = $2';
-        const result = await pool.query(updateQuery, [hashedPassword, email]);
+        const result = await db.query('UPDATE users SET password = $1 WHERE email = $2', [hashedPassword, email]);
 
         if (result.rowCount === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "User not found",
-                data: null
-            });
+            return error(res, "User not found", 404);
         }
 
-        // 5. DELETE the OTP from Redis so it can't be used again
         await redisClient.del(`otp_reset:${email}`);
-
-        return res.status(200).json({
-            success: true,
-            message: "Password reset successful. You can now login.",
-            data: null
-        });
-
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: error.message,
-            data: null
-        });
+        return success(res, "Password reset successful. You can now login.");
+    } catch (err) {
+        return error(res, err.message, 500);
     }
 };

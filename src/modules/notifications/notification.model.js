@@ -1,11 +1,12 @@
 const { DataTypes } = require('sequelize');
-const sequelize = require('../config/db'); // Your shared DB config
+const sequelize = require('../config/db'); 
+
 
 const Notification = sequelize.define('Notification', {
     userId: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        // This will link to Toria's User ID later
+        // This will link to User ID
     },
     title: {
         type: DataTypes.STRING,

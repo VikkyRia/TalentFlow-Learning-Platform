@@ -1,18 +1,14 @@
-const Notification = require('../models/notification.model');
+// services/notification.service.js
+const db = require("../../config/db");
 
-/**
- * Helper to create a notification for any user
- * @param {number} userId - The ID of the user receiving the alert
- * @param {string} title - Short heading
- * @param {string} message - The full notification text
- * @param {string} type - Category (assignment, enrollment, etc.)
- */
 const createNotification = async (userId, title, message, type = 'system') => {
     try {
-        await Notification.create({ userId, title, message, type });
-        console.log(`Notification sent to User ${userId}`);
-    } catch (error) {
-        console.error("Error creating notification:", error.message);
+        await db.query(
+            "INSERT INTO notifications (user_id, title, message, type) VALUES ($1, $2, $3, $4)",
+            [userId, title, message, type]
+        );
+    } catch (err) {
+        console.error("Notification Error:", err.message);
     }
 };
 

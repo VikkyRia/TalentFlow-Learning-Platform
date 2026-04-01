@@ -1,11 +1,13 @@
 const express = require("express");
 const router = express.Router();
+const authController = require("./auth.controller");
 
-//Auth routes 
-POST /api/auth/register
-POST /api/auth/login
-POST /api/auth/logout
-POST /api/auth/forgot-password
-POST /api/auth/reset-password
+// Auth routes - Using router.post() for all actions
+router.post("/register", authController.register);
+router.post('/verify-otp', authController.verifyOTP);
+router.post("/login", authController.login);
+router.post("/logout", authController.logout);
+router.post("/forgot-password", authController.forgotPassword);
+router.post("/reset-password", authController.resetPassword);
 
 module.exports = router;
