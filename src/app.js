@@ -10,6 +10,9 @@ migrate();
 // Import the team's response helper
 const { error, success } = require("./utils/response");
 
+// Import the team's response helper
+const { error, success } = require("./utils/response");
+
 const app = express();
 
 // ── Security & Utility Middleware ──────────────────
