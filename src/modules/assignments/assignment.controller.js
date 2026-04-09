@@ -4,15 +4,14 @@ const { success, error } = require("../../utils/response");
 
 // GET all assignments in a course
 exports.getCourseAssignments = async (req, res) => {
-    const { id } = req.params;
+    const { courseId } = req.params;
 
     try {
-
         const result = await db.query(
         `SELECT * FROM assignments
         WHERE course_id = $1
         ORDER BY created_at DESC`,
-        [id]
+        [courseId]
         );
 
         return success(res, "Assignments fetched", result.rows);
@@ -23,20 +22,18 @@ exports.getCourseAssignments = async (req, res) => {
 };
 
 
-// CREATE assignment (Instructor)
+// CREATE assignment (Instructor/Admin)
 exports.createAssignment = async (req, res) => {
-
-    const { id } = req.params;
+    const { courseId } = req.params;
     const { title, description, due_date } = req.body;
 
     try {
-
         const result = await db.query(
         `INSERT INTO assignments
         (course_id, title, description, due_date)
-        VALUES ($1,$2,$3,$4)
+        VALUES ($1, $2, $3, $4)
         RETURNING *`,
-        [id, title, description, due_date]
+        [courseId, title, description, due_date]
         );
 
         return success(res, "Assignment created", result.rows[0], 201);
@@ -49,11 +46,9 @@ exports.createAssignment = async (req, res) => {
 
 // GET single assignment
 exports.getAssignment = async (req, res) => {
-
     const { id } = req.params;
 
     try {
-
         const result = await db.query(
         `SELECT * FROM assignments
         WHERE id = $1`,
@@ -72,21 +67,20 @@ exports.getAssignment = async (req, res) => {
 };
 
 
-// UPDATE assignment (Instructor)
+// UPDATE assignment (Instructor/Admin)
 exports.updateAssignment = async (req, res) => {
-
     const { id } = req.params;
     const { title, description, due_date } = req.body;
 
     try {
-
         const result = await db.query(
         `UPDATE assignments
-        SET title=$1,
-            description=$2,
-            due_date=$3,
-            updated_at=NOW()
-        WHERE id=$4
+        SET
+            title = COALESCE($1, title),
+            description = COALESCE($2, description),
+            due_date = COALESCE($3, due_date),
+            updated_at = NOW()
+        WHERE id = $4
         RETURNING *`,
         [title, description, due_date, id]
         );
@@ -100,19 +94,17 @@ exports.updateAssignment = async (req, res) => {
     } catch (err) {
         return error(res, err.message, 500);
     }
-};
+    };
 
 
-// DELETE assignment (Instructor)
-exports.deleteAssignment = async (req, res) => {
-
+    // DELETE assignment (Instructor/Admin)
+    exports.deleteAssignment = async (req, res) => {
     const { id } = req.params;
 
     try {
-
         const result = await db.query(
         `DELETE FROM assignments
-        WHERE id=$1
+        WHERE id = $1
         RETURNING *`,
         [id]
         );

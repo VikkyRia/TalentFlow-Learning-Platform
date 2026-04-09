@@ -3,50 +3,50 @@ const router = express.Router();
 
 const assignmentController = require("./assignment.controller");
 
-const { protect } = require("../../middlewares/auth.middleware"); // Using your partner's middleware
+const { protect } = require("../../middlewares/auth.middleware");
 const { allowRoles } = require("../../middlewares/role.middleware");
 
 
-// GET all assignments in a course
+// GET /api/courses/:id/assignments
 router.get(
-    "/courses/:id/assignments",
-    protect,
-    assignmentController.getCourseAssignments
+  "/courses/:id/assignments",
+  protect,
+  assignmentController.getCourseAssignments
 );
 
 
-// CREATE assignment (Instructor only)
+// POST /api/courses/:id/assignments
 router.post(
-    "/courses/:id/assignments",
-    protect,
-    allowRoles("instructor"),
-    assignmentController.createAssignment
+  "/courses/:id/assignments",
+  protect,
+  allowRoles("instructor", "admin"),
+  assignmentController.createAssignment
 );
 
 
-// GET single assignment
+// GET /api/assignments/:id
 router.get(
-    "/assignments/:id",
-    protect,
-    assignmentController.getAssignment
+  "/assignments/:id",
+  protect,
+  assignmentController.getAssignment
 );
 
 
-// UPDATE assignment (Instructor only)
+// PATCH /api/assignments/:id
 router.patch(
-    "/assignments/:id",
-    protect,
-    allowRoles("instructor"),
-    assignmentController.updateAssignment
+  "/assignments/:id",
+  protect,
+  allowRoles("instructor", "admin"),
+  assignmentController.updateAssignment
 );
 
 
-// DELETE assignment (Instructor only)
+// DELETE /api/assignments/:id
 router.delete(
-    "/assignments/:id",
-    protect,
-    allowRoles("instructor"),
-    assignmentController.deleteAssignment
+  "/assignments/:id",
+  protect,
+  allowRoles("instructor", "admin"),
+  assignmentController.deleteAssignment
 );
 
 module.exports = router;
