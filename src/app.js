@@ -23,7 +23,7 @@ app.use(express.json());
 app.use("/api/auth",          require("./modules/auth/auth.routes"));
 app.use("/api/users",         require("./modules/users/user.routes"));
 app.use("/api/courses",       require("./modules/courses/course.routes"));
-app.use("/api/lessons",       require("./modules/lessons/lesson.routes"));
+app.use("/api/courses/:id/lessons", require("./modules/lessons/lesson.routes"));
 app.use("/api/assignments",   require("./modules/assignments/assignment.routes"));
 app.use("/api/progress",      require("./modules/progress/progress.routes"));
 app.use("/api/certificates",  require("./modules/certificates/certificate.routes"));
